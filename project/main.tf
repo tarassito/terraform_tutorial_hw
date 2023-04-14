@@ -13,63 +13,17 @@ provider "aws" {
   region = "us-west-2"
 }
 
-data "aws_iam_policy_document" "assume_role" {
-  statement {
-    effect = "Allow"
-
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-
-    actions = ["sts:AssumeRole"]
-  }
-}
-
-resource "aws_iam_role" "developer_role" {
-  name               = "developer_role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
-}
-
-
-resource "aws_iam_policy" "developer_policy" {
-  name = "developer_policy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "kinesis:*",
-          "s3:*"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_policy_attachment" {
-  policy_arn = aws_iam_policy.developer_policy.arn
-  role       = aws_iam_role.developer_role.name
-}
-
-
 data "archive_file" "http_to_kinesis_code" {
   type        = "zip"
-  source_file = "lambdas/HTTPToKinesis.py"
+  source_file = "lambdas/http_to_kinesis.py"
   output_path = "lambdas/http_to_kinesis.zip"
 }
 
-resource "aws_lambda_function" "http_to_kinesis_auto" {
+resource "aws_lambda_function" "http_to_kinesis" {
   filename      = "lambdas/http_to_kinesis.zip"
-  function_name = "HTTPToKinesisAuto"
+  function_name = "http_to_kinesis"
   role          = aws_iam_role.developer_role.arn
-  handler       = "HTTPToKinesis.lambda_handler"
+  handler       = "http_to_kinesis.lambda_handler"
   runtime       = "python3.9"
 
   environment {
@@ -80,22 +34,28 @@ resource "aws_lambda_function" "http_to_kinesis_auto" {
 }
 
 resource "aws_lambda_function_url" "lambda_url" {
-  function_name      = aws_lambda_function.http_to_kinesis_auto.function_name
+  function_name      = aws_lambda_function.http_to_kinesis.function_name
   authorization_type = "AWS_IAM"
 }
 
 data "archive_file" "kinesis_to_s3_code" {
   type        = "zip"
-  source_file = "lambdas/KinesisToS3Auto.py"
+  source_file = "lambdas/kinesis_to_s3.py"
   output_path = "lambdas/kinesis_to_s3.zip"
 }
 
-resource "aws_lambda_function" "kinesis_to_s3_auto" {
+resource "aws_lambda_function" "kinesis_to_s3" {
   filename      = "lambdas/kinesis_to_s3.zip"
-  function_name = "KinesisToS3Auto"
+  function_name = "kinesis_to_s3"
   role          = aws_iam_role.developer_role.arn
-  handler       = "KinesisToS3.lambda_handler"
+  handler       = "kinesis_to_s3.lambda_handler"
   runtime       = "python3.9"
+
+  environment {
+    variables = {
+      S3_BUCKET = var.bucket_name
+    }
+  }
 
 }
 
@@ -107,5 +67,23 @@ resource "aws_kinesis_stream" "stream_auto" {
   stream_mode_details {
     stream_mode = "PROVISIONED"
   }
+
+}
+
+resource "aws_lambda_function_event_invoke_config" "kinesis_to_s3_trigger" {
+  function_name                = aws_lambda_function.kinesis_to_s3.function_name
+  maximum_event_age_in_seconds = 60
+  maximum_retry_attempts       = 0
+}
+
+
+resource "aws_lambda_event_source_mapping" "kinesis_to_s3_mapping" {
+  event_source_arn = aws_kinesis_stream.stream_auto.arn
+  function_name = aws_lambda_function.kinesis_to_s3.arn
+  starting_position = "LATEST"
+
+  depends_on = [
+    aws_iam_role_policy_attachment.developer_policy_attachment
+  ]
 
 }
