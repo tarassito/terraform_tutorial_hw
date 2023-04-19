@@ -25,6 +25,7 @@ resource "aws_lambda_function" "http_to_kinesis" {
   role          = aws_iam_role.developer_role.arn
   handler       = "http_to_kinesis.lambda_handler"
   runtime       = "python3.9"
+  source_code_hash = "${data.archive_file.http_to_kinesis_code.output_base64sha256}"
 
   environment {
     variables = {
@@ -50,6 +51,7 @@ resource "aws_lambda_function" "kinesis_to_s3" {
   role          = aws_iam_role.developer_role.arn
   handler       = "kinesis_to_s3.lambda_handler"
   runtime       = "python3.9"
+  source_code_hash = "${data.archive_file.kinesis_to_s3_code.output_base64sha256}"
 
   environment {
     variables = {
@@ -78,12 +80,88 @@ resource "aws_lambda_function_event_invoke_config" "kinesis_to_s3_trigger" {
 
 
 resource "aws_lambda_event_source_mapping" "kinesis_to_s3_mapping" {
-  event_source_arn = aws_kinesis_stream.stream_auto.arn
-  function_name = aws_lambda_function.kinesis_to_s3.arn
+  event_source_arn  = aws_kinesis_stream.stream_auto.arn
+  function_name     = aws_lambda_function.kinesis_to_s3.arn
   starting_position = "LATEST"
 
   depends_on = [
     aws_iam_role_policy_attachment.developer_policy_attachment
   ]
 
+}
+
+resource "aws_db_instance" "postgres-db" {
+  instance_class         = "db.t3.micro"
+  apply_immediately      = true
+  allocated_storage      = 10
+  db_name                = "postgres_db"
+  username               = "postgres"
+  password               = "postgres"
+  engine                 = "postgres"
+  skip_final_snapshot    = true
+  publicly_accessible    = true
+  db_subnet_group_name   = "ucu-subnet-group"
+  vpc_security_group_ids = [aws_security_group.ucu-security-group.id]
+
+  depends_on = [aws_vpc.ucu-vpc, aws_db_subnet_group.ucu-subnet-group, aws_security_group.ucu-security-group]
+}
+
+data "archive_file" "kinesis_to_db_code" {
+  type        = "zip"
+  source_file = "lambdas/kinesis_to_db.py"
+  output_path = "lambdas/kinesis_to_db.zip"
+}
+
+resource "aws_lambda_function" "kinesis_to_db" {
+  filename      = "lambdas/kinesis_to_db.zip"
+  function_name = "kinesis_to_db"
+  role          = aws_iam_role.developer_role.arn
+  handler       = "kinesis_to_db.lambda_handler"
+  runtime       = "python3.9"
+  source_code_hash = "${data.archive_file.kinesis_to_db_code.output_base64sha256}"
+
+  environment {
+    variables = {
+      DB_HOST     = aws_db_instance.postgres-db.address
+      DB_PORT     = 5432
+      DB_NAME     = "postgres"
+      DB_USER     = "postgres"
+      DB_PASSWORD = "postgres"
+
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.ucu-subnet-1.id, aws_subnet.ucu-subnet-2.id]
+    security_group_ids = [aws_security_group.ucu-security-group.id]
+  }
+
+  layers     = [aws_lambda_layer_version.psycopg2_layer.arn]
+  depends_on = [aws_lambda_layer_version.psycopg2_layer, aws_db_instance.postgres-db]
+
+}
+
+resource "aws_lambda_layer_version" "psycopg2_layer" {
+  layer_name = "psycopg2_layer"
+  filename   = "lambdas/layers/psycopg2.zip"
+}
+
+resource "aws_lambda_function_event_invoke_config" "kinesis_to_db_trigger" {
+  function_name                = aws_lambda_function.kinesis_to_db.function_name
+  maximum_event_age_in_seconds = 60
+  maximum_retry_attempts       = 0
+}
+
+resource "aws_lambda_event_source_mapping" "kinesis_to_db_mapping" {
+  event_source_arn = aws_kinesis_stream.stream_auto.arn
+  function_name = aws_lambda_function.kinesis_to_db.arn
+  starting_position = "LATEST"
+
+  depends_on = [
+    aws_iam_role_policy_attachment.developer_policy_attachment
+  ]
+}
+
+resource "aws_s3_bucket" "s3_bucket" {
+  bucket = var.bucket_name
 }

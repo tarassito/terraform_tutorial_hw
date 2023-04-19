@@ -13,12 +13,10 @@ From there data is stored in S3 bucket as json file.
 
 ##### Steps
 1. Clone the repository - https://github.com/tarassito/terraform_tutorial_hw.git
-2. Login to AWS account and create S3 bucket. Update bucket name in 
-`project/variables.tf` (variable "bucket_name" , field default) with name of just created bucket. 
-3. Run `terraform init` from `project` directory. 
-4. Run `terraform plan` and `terraform apply`. 
-5. In outputs result you will see lambda_function_url. Save it for future Lambda invoking.
-6. Congrats project is deployed.
+2. Run `terraform init` from `project` directory. 
+3. Run `terraform plan` and `terraform apply`. 
+4. In outputs result you will see lambda_function_url. Save it for future Lambda invoking.
+5. Congrats project is deployed.
 
 #### How to interact with system
 
