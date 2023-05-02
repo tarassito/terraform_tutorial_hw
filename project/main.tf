@@ -19,6 +19,11 @@ data "archive_file" "http_to_kinesis_code" {
   output_path = "lambdas/http_to_kinesis.zip"
 }
 
+resource "aws_kms_key" "ucu_kms_key" {
+  description         = "ucu_kms_key"
+  enable_key_rotation = true
+}
+
 resource "aws_lambda_function" "http_to_kinesis" {
   filename         = "lambdas/http_to_kinesis.zip"
   function_name    = "http_to_kinesis"
@@ -26,6 +31,7 @@ resource "aws_lambda_function" "http_to_kinesis" {
   handler          = "http_to_kinesis.lambda_handler"
   runtime          = "python3.9"
   source_code_hash = data.archive_file.http_to_kinesis_code.output_base64sha256
+  kms_key_arn      = aws_kms_key.ucu_kms_key.arn
 
   environment {
     variables = {
@@ -52,6 +58,7 @@ resource "aws_lambda_function" "kinesis_to_s3" {
   handler          = "kinesis_to_s3.lambda_handler"
   runtime          = "python3.9"
   source_code_hash = data.archive_file.kinesis_to_s3_code.output_base64sha256
+  kms_key_arn      = aws_kms_key.ucu_kms_key.arn
 
   environment {
     variables = {
@@ -133,6 +140,7 @@ resource "aws_lambda_function" "kinesis_to_db" {
   handler          = "kinesis_to_db.lambda_handler"
   runtime          = "python3.9"
   source_code_hash = data.archive_file.kinesis_to_db_code.output_base64sha256
+  kms_key_arn      = aws_kms_key.ucu_kms_key.arn
 
   environment {
     variables = {
@@ -178,4 +186,14 @@ resource "aws_lambda_event_source_mapping" "kinesis_to_db_mapping" {
 
 resource "aws_s3_bucket" "s3_bucket" {
   bucket = var.bucket_name
+}
+
+
+resource "aws_s3_bucket_public_access_block" "access_s3_bucket" {
+  bucket = aws_s3_bucket.s3_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+  ignore_public_acls      = true
 }
