@@ -2,6 +2,7 @@ resource "aws_vpc" "ucu-vpc" {
   cidr_block           = "10.0.0.0/24"
   instance_tenancy     = "default"
   enable_dns_hostnames = true
+  enable_dns_support   = true
 
   tags = {
     Name = "ucu-vpc"
@@ -25,16 +26,16 @@ resource "aws_security_group" "ucu-security-group" {
   vpc_id      = aws_vpc.ucu-vpc.id
 
   ingress {
-    from_port = 0
-    protocol  = "-1"
-    to_port   = 0
+    from_port = 5432
+    protocol  = "tcp"
+    to_port   = 5432
     self      = true
   }
 
   egress {
-    from_port   = 0
-    protocol    = "-1"
-    to_port     = 0
+    from_port   = 5432
+    protocol    = "tcp"
+    to_port     = 5432
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -54,6 +55,15 @@ resource "aws_internet_gateway" "ucu-ig" {
   vpc_id = aws_vpc.ucu-vpc.id
   tags = {
     Name = "ucu-ig"
+  }
+}
+
+resource "aws_route_table" "ucu-rtb" {
+  vpc_id = aws_vpc.ucu-vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.ucu-ig.id
   }
 }
 
